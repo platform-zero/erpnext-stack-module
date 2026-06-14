@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "erpnext",
+  "repo": "erpnext-stack-module",
+  "runtimeId": "erpnext",
+  "lifecycle": "active",
+  "dependencies": [
+    "stack-foundation"
+  ],
+  "overlays": [
+    "stack.compose/erpnext.yml",
+    "stack.config/erpnext"
+  ]
+}
