@@ -245,7 +245,17 @@ services:
 
 volumes:
   erpnext_sites:
+    driver: local
+    driver_opts:
+      type: bind
+      o: bind
+      device: ${STACK_VOLUME_ROOT}/erpnext_sites
   erpnext_logs:
+    driver: local
+    driver_opts:
+      type: bind
+      o: bind
+      device: ${STACK_VOLUME_ROOT}/erpnext_logs
 
 networks:
   caddy: {}
