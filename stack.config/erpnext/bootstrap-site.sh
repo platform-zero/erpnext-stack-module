@@ -48,6 +48,74 @@ fi
 log "running site migration"
 bench --site "$SITE_NAME" migrate
 
+log "ensuring ERPNext setup wizard state is complete"
+SITE_NAME="$SITE_NAME" "$BENCH_DIR/env/bin/python" <<'PY'
+import os
+from datetime import date
+
+import frappe
+from frappe import _dict
+from erpnext.setup.setup_wizard.setup_wizard import setup_complete as erpnext_setup_complete
+
+site_name = os.environ["SITE_NAME"]
+company_name = os.environ.get("ERPNEXT_DEFAULT_COMPANY", "Datamancy")
+company_abbr = os.environ.get("ERPNEXT_DEFAULT_COMPANY_ABBR", "DTM")
+country = os.environ.get("ERPNEXT_DEFAULT_COUNTRY", "Australia")
+currency = os.environ.get("ERPNEXT_DEFAULT_CURRENCY", "AUD")
+timezone = os.environ.get("ERPNEXT_DEFAULT_TIMEZONE", "Australia/Hobart")
+current_year = date.today().year
+fy_start = os.environ.get("ERPNEXT_DEFAULT_FY_START", f"{current_year}-01-01")
+fy_end = os.environ.get("ERPNEXT_DEFAULT_FY_END", f"{current_year}-12-31")
+
+frappe.init(site=site_name, sites_path="sites")
+frappe.connect()
+frappe.set_user("Administrator")
+try:
+    setup_complete = bool(frappe.db.get_single_value("System Settings", "setup_complete"))
+    default_company = frappe.db.get_single_value("Global Defaults", "default_company")
+    company_exists = bool(frappe.db.exists("Company", company_name))
+
+    if not setup_complete or not default_company or not company_exists:
+        args = _dict(
+            language="English",
+            country=country,
+            timezone=timezone,
+            currency=currency,
+            company_name=company_name,
+            company_abbr=company_abbr,
+            chart_of_accounts="Standard",
+            fy_start_date=fy_start,
+            fy_end_date=fy_end,
+            enable_telemetry=0,
+            setup_demo=0,
+        )
+        if not company_exists:
+            erpnext_setup_complete(args)
+
+        if frappe.db.exists("Currency", currency):
+            frappe.db.set_value("Currency", currency, "enabled", 1)
+        frappe.db.set_single_value("System Settings", "country", country)
+        frappe.db.set_single_value("System Settings", "language", "en")
+        frappe.db.set_single_value("System Settings", "time_zone", timezone)
+        frappe.db.set_single_value("System Settings", "currency", currency)
+        frappe.db.set_single_value("System Settings", "enable_onboarding", 1)
+        frappe.db.set_single_value("System Settings", "setup_complete", 1)
+
+        global_defaults = frappe.get_doc("Global Defaults", "Global Defaults")
+        global_defaults.default_company = company_name
+        global_defaults.default_currency = currency
+        global_defaults.country = country
+        global_defaults.save(ignore_permissions=True)
+
+        for app in ("frappe", "erpnext"):
+            if frappe.db.exists("Installed Application", {"app_name": app}):
+                frappe.db.set_value("Installed Application", {"app_name": app}, "is_setup_complete", 1)
+
+        frappe.db.commit()
+finally:
+    frappe.destroy()
+PY
+
 if [ -n "$OAUTH_SECRET" ]; then
   log "configuring Keycloak social login for ${SITE_NAME}"
   SITE_NAME="$SITE_NAME" "$BENCH_DIR/env/bin/python" <<'PY'
@@ -115,6 +183,12 @@ desk_roles = ["Desk User", "Employee", "Projects User"]
 frappe.init(site=site_name, sites_path="sites")
 frappe.connect()
 try:
+    if "Desk User" in {row.name for row in frappe.get_all("Role", fields=["name"], limit_page_length=0)}:
+        portal_settings = frappe.get_single("Portal Settings")
+        if portal_settings.default_role != "Desk User":
+            portal_settings.default_role = "Desk User"
+            portal_settings.save(ignore_permissions=True)
+
     users = frappe.get_all(
         "User",
         filters={"enabled": 1},
