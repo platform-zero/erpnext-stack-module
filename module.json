@@ -1,0 +1,74 @@
+{
+  "configuration": {
+    "schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "id": "erpnext",
+  "overlays": [
+    "stack.compose/erpnext.yml",
+    "stack.config/erpnext"
+  ],
+  "provides": [
+    {
+      "capability": "module:erpnext",
+      "version": "1"
+    }
+  ],
+  "requires": [
+    {
+      "capability": "module:stack-foundation",
+      "version": "1"
+    }
+  ],
+  "schemaVersion": 1,
+  "services": [
+    {
+      "name": "erpnext",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-backend",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-bootstrap",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-configurator",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-queue-long",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-queue-short",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-scheduler",
+      "routes": [],
+      "volumes": []
+    },
+    {
+      "name": "erpnext-websocket",
+      "routes": [],
+      "volumes": []
+    }
+  ],
+  "verification": {
+    "commands": [
+      "test -f stack.module.json && test -f module.json"
+    ]
+  }
+}
