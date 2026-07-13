@@ -1,0 +1,267 @@
+---
+schemaVersion: 1
+module: "erpnext"
+target: "apps"
+services:
+  erpnext-configurator:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-configurator"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      mariadb: "healthy"
+      valkey: "healthy"
+    environment:
+      DB_HOST: "mariadb"
+      DB_PORT: 3306
+      REDIS_CACHE: "default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/1"
+      REDIS_QUEUE: "default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/3"
+      SOCKETIO_PORT: 9000
+      ERPNEXT_SITE_NAME: "${ERPNEXT_SITE_NAME:-erpnext.${DOMAIN}}"
+      ERPNEXT_HOST_URL: "${ERPNEXT_HOST_URL:-https://erpnext.${DOMAIN}}"
+    networks:
+    - "mariadb"
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    - "./configs/erpnext/configure-runtime.sh:/configure-runtime.sh:ro"
+    entrypoint:
+    - "bash"
+    - "/configure-runtime.sh"
+    restart: "on-failure"
+  erpnext-bootstrap:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-bootstrap"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-configurator: "completed"
+      mariadb: "healthy"
+      valkey: "healthy"
+    environment:
+      DB_HOST: "mariadb"
+      DB_PORT: 3306
+      MARIADB_ROOT_USERNAME: "root"
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ADMIN_PASSWORD}"
+      ERPNEXT_ADMIN_PASSWORD: "${STACK_ADMIN_PASSWORD}"
+      ERPNEXT_SITE_NAME: "${ERPNEXT_SITE_NAME:-erpnext.${DOMAIN}}"
+      ERPNEXT_HOST_URL: "${ERPNEXT_HOST_URL:-https://erpnext.${DOMAIN}}"
+      DOMAIN: "${DOMAIN}"
+      ERPNEXT_OAUTH_SECRET: "${ERPNEXT_OAUTH_SECRET:?ERPNEXT_OAUTH_SECRET is required}"
+      SSL_CERT_FILE: "/ca/caddy-ca.crt"
+      REQUESTS_CA_BUNDLE: "/ca/caddy-ca.crt"
+    networks:
+    - "caddy"
+    - "mariadb"
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    - "./configs/erpnext/bootstrap-site.sh:/bootstrap-site.sh:ro"
+    - "caddy_ca:/ca:ro"
+    entrypoint:
+    - "bash"
+    - "/bootstrap-site.sh"
+    restart: "on-failure"
+  erpnext-backend:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-backend"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-bootstrap: "completed"
+      mariadb: "healthy"
+      valkey: "healthy"
+    environment:
+      SSL_CERT_FILE: "/ca/caddy-ca.crt"
+      REQUESTS_CA_BUNDLE: "/ca/caddy-ca.crt"
+    networks:
+    - "caddy"
+    - "mariadb"
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    - "caddy_ca:/ca:ro"
+    health:
+      test:
+      - "CMD-SHELL"
+      - "curl -fsS -H \"Host: ${ERPNEXT_SITE_NAME:-erpnext.${DOMAIN}}\" http://127.0.0.1:8000/api/method/ping\
+        \ | grep -q '\"pong\"'\n"
+      interval: "15s"
+      timeout: "10s"
+      retries: 10
+      start_period: "180s"
+    restart: "unless-stopped"
+  erpnext-websocket:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-websocket"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-bootstrap: "completed"
+      valkey: "healthy"
+    environment:
+      FRAPPE_REDIS_CACHE: "redis://default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/1"
+      FRAPPE_REDIS_QUEUE: "redis://default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/3"
+    networks:
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    health:
+      test:
+      - "CMD-SHELL"
+      - "python3 -c \"open('/proc/1/cmdline','rb').read()\""
+      interval: "15s"
+      timeout: "10s"
+      retries: 10
+      start_period: "60s"
+    command:
+    - "node"
+    - "/home/frappe/frappe-bench/apps/frappe/socketio.js"
+    restart: "unless-stopped"
+  erpnext-queue-short:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-queue-short"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-bootstrap: "completed"
+      mariadb: "healthy"
+      valkey: "healthy"
+    environment:
+      FRAPPE_REDIS_CACHE: "redis://default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/1"
+      FRAPPE_REDIS_QUEUE: "redis://default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/3"
+    networks:
+    - "mariadb"
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    health:
+      test:
+      - "CMD-SHELL"
+      - "python3 -c \"open('/proc/1/cmdline','rb').read()\""
+      interval: "15s"
+      timeout: "5s"
+      retries: 10
+      start_period: "60s"
+    command: "bench worker --queue short,default"
+    restart: "unless-stopped"
+  erpnext-queue-long:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-queue-long"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-bootstrap: "completed"
+      mariadb: "healthy"
+      valkey: "healthy"
+    environment:
+      FRAPPE_REDIS_CACHE: "redis://default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/1"
+      FRAPPE_REDIS_QUEUE: "redis://default:${VALKEY_ADMIN_PASSWORD}@valkey:6379/3"
+    networks:
+    - "mariadb"
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    health:
+      test:
+      - "CMD-SHELL"
+      - "python3 -c \"open('/proc/1/cmdline','rb').read()\""
+      interval: "15s"
+      timeout: "5s"
+      retries: 10
+      start_period: "60s"
+    command: "bench worker --queue long,default,short"
+    restart: "unless-stopped"
+  erpnext-scheduler:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext-scheduler"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-bootstrap: "completed"
+      mariadb: "healthy"
+      valkey: "healthy"
+    networks:
+    - "mariadb"
+    - "valkey"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    health:
+      test:
+      - "CMD-SHELL"
+      - "python3 -c \"open('/proc/1/cmdline','rb').read()\""
+      interval: "15s"
+      timeout: "5s"
+      retries: 10
+      start_period: "60s"
+    command: "bench schedule"
+    restart: "unless-stopped"
+  erpnext:
+    image: "frappe/erpnext:v16.17.0"
+    containerName: "erpnext"
+    lifecycle: "daemon"
+    updatePolicy: "registry"
+    placement: "rootful"
+    dependencies:
+      erpnext-bootstrap: "completed"
+      erpnext-backend: "healthy"
+      erpnext-websocket: "healthy"
+    environment:
+      BACKEND: "erpnext-backend:8000"
+      SOCKETIO: "erpnext-websocket:9000"
+      FRAPPE_SITE_NAME_HEADER: "${FRAPPE_SITE_NAME_HEADER:-$$host}"
+      UPSTREAM_REAL_IP_ADDRESS: "${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}"
+      UPSTREAM_REAL_IP_HEADER: "${UPSTREAM_REAL_IP_HEADER:-X-Forwarded-For}"
+      UPSTREAM_REAL_IP_RECURSIVE: "${UPSTREAM_REAL_IP_RECURSIVE:-off}"
+      PROXY_READ_TIMEOUT: "${PROXY_READ_TIMEOUT:-120}"
+      CLIENT_MAX_BODY_SIZE: "${CLIENT_MAX_BODY_SIZE:-50m}"
+    networks:
+    - "caddy"
+    - "erpnext-internal"
+    volumes:
+    - "erpnext_sites:/home/frappe/frappe-bench/sites"
+    - "erpnext_logs:/home/frappe/frappe-bench/logs"
+    health:
+      test:
+      - "CMD-SHELL"
+      - "curl -fsS -H \"Host: ${ERPNEXT_SITE_NAME:-erpnext.${DOMAIN}}\" http://127.0.0.1:8080/api/method/ping\
+        \ | grep -q '\"pong\"'\n"
+      interval: "15s"
+      timeout: "10s"
+      retries: 10
+      start_period: "180s"
+    command: "nginx-entrypoint.sh"
+    restart: "unless-stopped"
+networks:
+  caddy: {}
+  mariadb: {}
+  valkey: {}
+  erpnext-internal:
+    driver: "bridge"
+    internal: true
+volumes:
+  erpnext_sites:
+    hostPath: "${STACK_VOLUME_ROOT}/erpnext_sites"
+  erpnext_logs:
+    hostPath: "${STACK_VOLUME_ROOT}/erpnext_logs"
