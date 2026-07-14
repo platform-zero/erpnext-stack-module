@@ -19,7 +19,6 @@
   "smoke": "external-only",
   "smokeUnsupportedReason": "requires generated bundle context, deployed networking, secrets, or service dependencies",
   "overlays": [
-    "stack.compose/erpnext.yml",
     "stack.config/erpnext",
     "stack.runtime.yaml"
   ],

@@ -6,7 +6,7 @@
 - Lifecycle: `active`
 
 ## Owned overlays
-- `stack.compose/erpnext.yml`
+- `stack.runtime.yaml`
 - `stack.config/erpnext`
 
 ## Dependencies
