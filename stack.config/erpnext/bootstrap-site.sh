@@ -178,7 +178,15 @@ import frappe
 site_name = os.environ["SITE_NAME"]
 domain = os.environ["DOMAIN"]
 allowed_email_suffix = f"@{domain}"
-desk_roles = ["Desk User", "Employee", "Projects User"]
+desk_roles = [
+    "Desk User",
+    "Employee",
+    "Projects User",
+    "Purchase User",
+    "Accounts User",
+    "Sales User",
+    "Stock User",
+]
 
 frappe.init(site=site_name, sites_path="sites")
 frappe.connect()
