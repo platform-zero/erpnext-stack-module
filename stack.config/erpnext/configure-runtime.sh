@@ -29,4 +29,11 @@ bench set-config -gp socketio_port "$SOCKETIO_PORT"
 bench set-config -g chromium_path /usr/bin/chromium-headless-shell
 bench set-config -g host_name "$HOST_URL"
 
+# Existing sites retain their own database endpoint in site_config.json.  Keep
+# that state aligned when Platform Zero moves MariaDB into another UID domain.
+if [ -f "sites/${SITE_NAME}/site_config.json" ]; then
+  bench --site "$SITE_NAME" set-config db_host "$DB_HOST"
+  bench --site "$SITE_NAME" set-config -p db_port "$DB_PORT"
+fi
+
 log "runtime bench configuration is ready"
